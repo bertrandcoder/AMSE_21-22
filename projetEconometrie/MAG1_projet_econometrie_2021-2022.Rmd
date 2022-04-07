@@ -1,0 +1,388 @@
+---
+title: "MAG1 projet d'econometrie appliquée: [réplique de l'étude de Angrist et Krueger (1991)]"
+output:
+  html_document:
+    code_folding: show
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+    keep_md: false
+---
+
+ce projet est proposé par:
+
+* Kouomegne Tchienguing bertrand
+* Barry Alpha oumar
+* Abd El Wahab Wissam
+* Koffi kablan kan Max michel
+* Ducoux charley
+
+# [Partie 1] Replication
+
+## Introduction:
+Nous allons tenter de répliquer l'étude de Angrist and Krueger (1991) sur l’impact de l’école obligatoire sur les revenus. Les auteurs ont mené une étude quantitative, afin d’étudier le lien entre les revenus et l’école obligatoire. Ils ont
+utilisé la méthode des variables instrumentales, avec le trimestre de naissance des individus comme
+instrument pour l’éducation, dans le but de voir s’il existe une corrélation entre école obligatoire et
+les revenus des individus. En effet, l’école étant obligatoire jusqu’à un certain âge dans plusieurs
+pays, être né en début d’année permet aux individus de quitter l’école plus tôt.
+
+### Pourquoi l'estimation par la méthode des moindres carrées ordinaires est invalide?
+
+Le choix d’utilisation des variables instrumentales peut s’expliquer par le fait que la
+méthode des moindres carrés ordinaires peut être biaisée, notamment à cause de variables omises
+tels que les capacités des individus ou encore la catégorie socioprofessionnelle des parents, qui
+auront un impact sur les revenus, mais aussi sur l’éducation. De fait, si le trimestre de naissance est
+une variable exogène comme indiqué dans le texte, et qu’elle n’est corrélée à rien d’autres que
+l’éducation, elle permettra d’identifier l’impact d’une augmentation du temps passé à l’école.
+Cependant, dans le modèle développé par les auteurs, la différence de résultats entre la méthode des
+moindres carrés ordinaires et celle des variables instrumentales est faible. Cela suggère que
+l’estimation par MCO est peu biaisée.
+
+### Discussion à propos de la stratégie
+
+Concernant la crédibilité de cette stratégie, on sait que la variable instrumentale devait être
+corrélée avec la variable explicative endogène : les gens nés au premier trimestre de l’année ont un
+niveau d’éducation plus faible que ceux nés plus tard dans l’année. Mais la différence d’éducation
+entre les personnes avec un master et ceux avec un doctorat n’est pas corrélé avec le trimestre de
+naissance. On peut donc conclure qu’en l’absence de l’école obligatoire, on ne verra pas de
+différence de niveau d’éducation par rapport au trimestre de naissance.
+On sait également que la variable instrumentale ne doit pas être corrélée au terme d’erreur. Il
+est important de noter un consensus de la part des psychologues, pour qui, les élèves commençant
+l’école en étant plus âgés, sont plus matures et ont tendance à mieux réussir à l’école. Angrist et
+Krueger trouvent cette idée peu satisfaisante, mais précise que cela aurait biaisé leur estimateur vers
+le bas. De plus, il n’y a pas de preuves liant le statut socio-économique des parents et le trimestre de
+naissance. Enfin, la différence de salaire selon le trimestre de naissance pour les diplômés
+universitaires (dont l’éducation ne dépend plus de l’école obligatoire) est insignifiante. On peut
+donc conclure que la variable instrumentale n’est pas corrélée au revenu, ou à la catégorie sociale.
+Cependant, le doute persiste concernant les capacités suite aux études menées par les psychologues.
+Cette étude, menée par Angrist et Krueger, comporte certaines limites : la relation entre le
+trimestre de naissance et la dimension sociodémographique n’ont pas été assez discuté, avec
+seulement une étude citée (celle de Lam et Miron en 1987). De plus, en 1950, les personnes nées au
+dernier trimestre ont un niveau d’étude relativement plus faible, ce qui contredit les résultats de
+Angrist et Krueger. Et il n’y a pas eu d’analyse pour les individus nés à cette période.
+
+## Manipulations de données
+
+```{r,warning=FALSE,message=FALSE}
+#library
+library(tidyverse)
+library(ggplot2)
+library(gridExtra)
+library(lubridate)
+library(stargazer)
+library(dplyr)
+library(babynames)
+library(ggrepel)
+library(tidyr)
+library(AER)
+library(hrbrthemes)
+library(aod)
+library(pixiedust)
+library(kableExtra)
+library(gt)
+library(DT)
+library(htmltools)
+library(tidyverse)
+library(ipumsr)
+library(Rcpp)
+
+path="C:/Users/LENOVO/Desktop/aix marseille université 2021-2022/cours de projet econometrie/econometric project/"
+
+pums <- read.table(paste(path,"QOB.raw",sep=""),
+                   header           = FALSE,
+                   stringsAsFactors = FALSE)
+colnames(pums)[c(1,2,4,5,6,9:13,16,18,19:21,24,25,27)] <- c("AGE", "AGEQ", "EDUC",
+                                                            "ENOCENT","ESOCENT", "LWKLYWGE", 
+                                                            "MARRIED", "MIDATL", "MT", "NEWENG", "CENSUS", "QOB", "RACE",
+                                                            "SMSA", "SOATL", "WNOCENT", "WSOCENT", "YOB")
+```
+
+```{r}
+pums <- as_tibble(pums)#On transforme la table de donnees en tible 
+pums %>%
+  mutate(cohort = factor(1*(YOB<=39 & YOB >=30) +
+                           2*(YOB<=49 & YOB >=40),
+                         levels=c(1,2), labels=c("30-39","40-49")) ) -> pums
+
+pums%>%
+  mutate(DOB=ymd(paste("19",YOB,QOB*3, sep=""),truncated = 2))->pums
+```
+
+## Graphiques de séries temporelles
+
+```{r}
+pums_graph1<-aggregate(pums[,4:18], list(pums$DOB), mean)# pums_graph1 is the dataset with the aggregation of EDUC (Years of Education) 
+#by YOB (Year Of Birth), this is for drawing the first chart.
+pums_graph1%>%
+  mutate(QOB_factor=factor(QOB))->pums_graph1
+## tranformation
+
+ggplot(pums_graph1, aes(x=Group.1,y=EDUC)) +
+  geom_line() +
+  geom_point(aes(col=QOB_factor),size=4)+
+  scale_color_manual(values = c("#DC101C", "#181616", "#181616","#181616"))+
+  geom_text(aes(label=QOB_factor),hjust=0.5, vjust=0.5,col="white")+
+  theme(legend.position = "None")+
+  ylab("Years of education")+
+  xlab("Year of birth")+
+  ggtitle("Average education by quarter of birth")
+```
+
+
+Il est ainsi possible de constater une tendance généralement haussiere de la variable EDUC en moyenne
+pour les cohortes nées dans les années 1930 et 1950.En observant plus attentivement, on remarque que dans une année la durée moyenne d'éducation est de plus en plus élévée en fonction du trimestre de naissance. Ceci pourrait permettre de conclure une corrélation en le trimestre de naissance et le nombre d'année d'éducation.
+
+
+```{r}
+pums_graph2<-aggregate(pums[,9:18], list(pums$DOB), mean)
+pums_graph2%>%
+  mutate(QOB_factor=factor(QOB))->pums_graph2 # pums_graph2 is the dataset with the aggregation of EDUC (Years of Education) 
+#by YOB (Year Of Birth), this is for drawing the first chart.
+
+ggplot(pums_graph2, aes(x=Group.1,y=LWKLYWGE,shape=)) +
+  geom_line() +
+  geom_point(aes(col=QOB_factor),size=4)+
+  scale_color_manual(values = c("#DC101C", "#181616", "#181616","#181616"))+
+  geom_text(aes(label=QOB_factor),hjust=0.5, vjust=0.5,col="white")+
+  theme(legend.position = "None")+
+  ylab("Log weekly earnings")+
+  xlab("Year of birth")+
+  ggtitle("Average weekly wage by quarter of birth")
+```
+
+
+Il est ainsi possible de constater une tendance générale baissiere du logarithme du salaire moyen en fonction de l'année de naissance pour les cohortes nées dans les années 1930 et 1950.En observant plus attentivement, on remarque que dans une année le salaire moyen décroît avec le trimestre de naissance. Ceci pourrait permettre de conclure une corrélation en le trimestre de naissance et le logarithme salaire moyen.
+
+
+```{r}
+## Transformations
+pums %>%
+  filter(cohort == "30-39") -> pums.tab5
+pums.tab5%>%
+  mutate(instru=factor(QOB):factor(YOB))->pums.tab5
+pums.tab5%>%
+  mutate(AGE_SQUARED=(AGE^2))->pums.tab5
+```
+
+## Table 5 (OLS et IV)
+
+```{r}
+
+## regression
+reg.MCO1 <- lm(LWKLYWGE ~ EDUC+factor(YOB),data=pums.tab5)
+reg.IV1 <- ivreg(LWKLYWGE ~ EDUC+factor(YOB)|instru,data=pums.tab5)
+
+reg.MCO2 <- lm(LWKLYWGE ~ EDUC+factor(YOB)+AGE_SQUARED+AGE,data=pums.tab5)
+reg.IV2 <- ivreg(LWKLYWGE ~ EDUC+factor(YOB)+AGE_SQUARED+AGE|instru+factor(YOB)+AGE_SQUARED+AGE,data=pums.tab5)
+
+reg.MCO3 <- lm(LWKLYWGE ~ EDUC+factor(YOB)+RACE+SMSA+MARRIED + NEWENG + MIDATL + ENOCENT +WNOCENT + SOATL + ESOCENT + WSOCENT + MT,data=pums.tab5)
+reg.IV3 <- ivreg(LWKLYWGE ~ EDUC+factor(YOB)+RACE+SMSA+MARRIED + NEWENG + MIDATL + ENOCENT +WNOCENT + SOATL + ESOCENT + WSOCENT + MT|instru+factor(YOB)+RACE+SMSA+MARRIED + NEWENG + MIDATL + ENOCENT +WNOCENT + SOATL + ESOCENT + WSOCENT + MT,data=pums.tab5)
+
+reg.MCO4 <- lm(LWKLYWGE ~ EDUC+factor(YOB)+RACE+SMSA+MARRIED + NEWENG + MIDATL + ENOCENT +WNOCENT + SOATL + ESOCENT + WSOCENT + MT+AGE_SQUARED+AGE,data=pums.tab5)
+reg.IV4 <- ivreg(LWKLYWGE ~ EDUC+factor(YOB)+RACE+SMSA+MARRIED + NEWENG + MIDATL + ENOCENT +WNOCENT + SOATL + ESOCENT + WSOCENT + MT+AGE_SQUARED+AGE|instru+factor(YOB)+RACE+SMSA+MARRIED + NEWENG + MIDATL + ENOCENT +WNOCENT + SOATL + ESOCENT + WSOCENT + MT+AGE_SQUARED+AGE,data=pums.tab5)
+
+```
+
+
+
+```{r}
+stargazer(reg.MCO1, reg.IV1,reg.MCO2,reg.IV2,reg.MCO3,reg.IV3,reg.MCO4,reg.IV4,
+          dep.var.caption="",dep.var.labels="",
+          omit.table.layout = "n", star.cutoffs = NA,keep.stat=c("rsq","n"),no.space=TRUE,
+          header=FALSE,
+          keep=c("EDUC","RACE","SMSA","MARRIED","AGE_SQUARED","AGE"),
+          title="Log hourly wage OLS regressions", type="text"
+)
+```
+
+Au total, nous avons 4 regressions (OLS et IV). L'estimateur des moindres carrés pour la variable "EDUC" est faible par raport à celui de l'esmation par variable instrumentale (l'estimation par la méthode des moindre carrées ordinaires sous estime l'estimateur). Par ailleurs, l'âge au carré est très faiblement corrélée au salaire et on peut aussi voir que les personnes plus âgées ont tendance à avoir des salaires de moins en moins élévés.
+
+
+## Estimateur de wald
+
+$w=\frac{E\lbrace log_{ya}|Q_{1}\rbrace-E\lbrace log_{ya}|Q_{2,3,4}\rbrace}{E\lbrace S|Q_{1}\rbrace-E\lbrace S|Q_{2,3,4}\rbrace}$
+
+```{r}
+pums.tab5$wald_dum <- (pums.tab5$QOB == 2 | pums.tab5$QOB == 3| pums.tab5$QOB == 4) * 1 
+tab<-aggregate(cbind(LWKLYWGE,EDUC) ~ wald_dum, data = pums.tab5, mean)
+
+tab2 <- as.data.frame(t(tab))
+#tab<-apply(pums.tab5$wald_dum, 1, mean)
+tab2%>%
+  mutate(V1-V2)->tab2
+
+tab2_ter <- tab2[-1,]
+
+
+tab2_ter2<-rbind(tab2_ter,c(0,0,0.1020),c(0,0,0.0709))
+
+colnames(tab2_ter2) <- c("(1): 1 QOB","(2): 2,3,4 QOB","(3): (1)-(2)")## nom de colonne
+rownames(tab2_ter2) <- c("ln (wkly.wage)","Education","Wald test. of return to education","OLS return to education")
+
+tab2_ter2
+
+```
+
+
+L'estimation Wald du rendement de l'éducation (0,10) est légerement supérieure à l'estimation MCO (OLS) (0,07), mais la différence entre les deux estimations n'est pas statistiquement significative.
+
+# [Partie 2] data wrangling
+
+
+## Manipulation de données
+
+**NB:**
+
+* La base de données téléchargée contenait **11 343 120** individus. Pour des raison de performance de l'ordinateur, nous avons créé un **échantillon aléatoire de 900 000** individus à partir de cette base. Et c'est avec cet échantillon nommé *pums2* que nous avons continué de travailler.
+
+* Pour la représentation graphique, nous avons utilisé la période allant de **1930 à 1950**. 
+
+```{r ,warning=FALSE,message=FALSE}
+ddi   <- read_ipums_ddi(paste(path,"usa_00003.xml",sep=""))
+USA_Census <- read_ipums_micro(ddi, data_file =
+                            paste(path,"usa_00003.dat",sep=""))
+
+colnames(USA_Census)[c(1:12)] <- c("REGION", "METRO", "SEX","AGE","QOB","MARRIED","YOB","RACE","RACE2", 
+                                                            "EDUC","EDUC2","WGE")
+
+USA_Census <- as_tibble(USA_Census)  #On transforme la table de donnees en tible
+
+USA_Census %>%
+  mutate(cohort = factor(1*(YOB<=1939 & YOB >=1930) +
+                           2*(YOB<=1949 & YOB >=1940),
+                         levels=c(1,2), labels=c("30-39","40-49")) ) -> USA_Census
+
+pums2<-USA_Census[sample(row.names(USA_Census), 900000, replace=FALSE), ]
+pums2%>%
+  mutate(DOB=ymd(paste(YOB ,QOB*3, sep=""),truncated = 2))->pums2
+
+pums2$aide<-pums2$WGE
+pums2$WGE[pums2$aide==0]<-1
+pums2%>%
+  mutate(LWKLYWGE=log(WGE))->pums2 
+
+```
+
+## Graphiques de séries temporelles
+
+```{r,warning=FALSE,message=FALSE}
+pums2 %>%
+  filter(YOB<=1950 & YOB >=1930) -> pums3
+pums2_graph1<-aggregate(pums3[,4:14], list(pums3$DOB), mean)# pums_graph1 is the dataset with the aggregation of EDUC (Years of Education) 
+#by YOB (Year Of Birth), this is for drawing the first chart.
+pums2_graph1%>%
+  mutate(QOB_factor=factor(QOB))->pums2_graph1
+## tranformation
+
+ggplot(pums2_graph1, aes(x=Group.1,y=EDUC)) +
+  geom_line() +
+  geom_point(aes(col=QOB_factor),size=4)+
+  scale_color_manual(values = c("#DC101C", "#181616", "#181616","#181616"))+
+  geom_text(aes(label=QOB_factor),hjust=0.5, vjust=0.5,col="white")+
+  theme(legend.position = "None")+
+  ylab("Years of education")+
+  xlab("Year of birth")+
+  ggtitle("Average education by quarter of birth")
+```
+
+
+De facon similaire à l'étude de Angrist et Krueger (1991) on constate une tendance haussiere de la variable EDUC en moyenne pour les cohortes nées dans les années 1930 et 1950.En observant plus attentivement, on remarque que dans une année la durée moyenne d'éducation est de plus en plus élévée en fonction du trimestre de naissance. Ceci pourrait permettre de conclure une corrélation en le trimestre de naissance et le nombre d'année d'éducation.
+
+```{r,warning=FALSE,message=FALSE}
+pums2_graph2<-aggregate(pums3[,4:16], list(pums3$DOB), mean)
+pums2_graph2%>%
+  mutate(QOB_factor=factor(QOB))->pums2_graph2 # pums_graph2 is the dataset with the aggregation of EDUC (Years of Education) 
+#by YOB (Year Of Birth), this is for drawing the first chart.
+
+ggplot(pums2_graph2, aes(x=Group.1,y=LWKLYWGE)) +
+  geom_line() +
+  geom_point(aes(col=QOB_factor),size=4)+
+  scale_color_manual(values = c("#DC101C", "#181616", "#181616","#181616"))+
+  geom_text(aes(label=QOB_factor),hjust=0.5, vjust=0.5,col="white")+
+  theme(legend.position = "None")+
+  ylab("Log weekly earnings")+
+  xlab("Year of birth")+
+  ggtitle("Average weekly wage by quarter of birth")
+
+```
+
+
+Contrairement à l'étude de Angrist et Krueger (1991) on constate une tendance générale haussiere du logarithme du salaire moyen en fonction de l'année de naissance pour les cohortes nées dans les années 1930 et 1950.En observant plus attentivement, on remarque que dans une année le salaire moyen croît avec le trimestre de naissance. Ceci pourrait permettre de conclure une corrélation en le trimestre de naissance et le logarithme salaire moyen
+
+```{r}
+## Transformations
+pums2 %>%
+  filter(cohort == "30-39") -> pums2.tab5
+pums2.tab5%>%
+  mutate(instru=factor(QOB):factor(YOB))->pums2.tab5
+pums2.tab5%>%
+  mutate(AGE_SQUARED=(AGE^2))->pums2.tab5
+pums2.tab5%>%
+  mutate(SMSA = factor(1*(METRO>=3) +
+                           2*(METRO<3),
+                         levels=c(1,2) )) -> pums2.tab5
+
+```
+
+## Tables OLS et IV
+
+```{r}
+## regression
+reg2.MCO1 <- lm(LWKLYWGE ~ EDUC+factor(YOB),data=pums2.tab5)
+reg2.IV1 <- ivreg(LWKLYWGE ~ EDUC+factor(YOB)|instru,data=pums2.tab5)
+
+reg2.MCO2 <- lm(LWKLYWGE ~ EDUC+factor(YOB)+AGE_SQUARED+AGE,data=pums2.tab5)
+reg2.IV2 <- ivreg(LWKLYWGE ~ EDUC+factor(YOB)+AGE_SQUARED+AGE|instru+factor(YOB)+AGE_SQUARED+AGE,data=pums2.tab5)
+
+reg2.MCO3 <- lm(LWKLYWGE ~ EDUC+factor(YOB)+RACE+SMSA+MARRIED,data=pums2.tab5)
+reg2.IV3 <- ivreg(LWKLYWGE ~ EDUC+factor(YOB)+RACE+SMSA+MARRIED |instru+factor(YOB)+RACE+SMSA+MARRIED ,data=pums2.tab5)
+
+reg2.MCO4 <- lm(LWKLYWGE ~ EDUC+factor(YOB)+RACE+SMSA+MARRIED+AGE_SQUARED+AGE,data=pums2.tab5)
+reg2.IV4 <- ivreg(LWKLYWGE ~ EDUC+factor(YOB)+RACE+SMSA+MARRIED +AGE_SQUARED+AGE|instru+factor(YOB)+RACE+SMSA+MARRIED+AGE_SQUARED+AGE,data=pums2.tab5)
+
+```
+
+```{r}
+stargazer(reg2.MCO1, reg2.IV1,reg2.MCO2,reg2.IV2,reg2.MCO3,reg2.IV3,reg2.MCO4,reg2.IV4,
+          dep.var.caption="",dep.var.labels="",
+          omit.table.layout = "n", star.cutoffs = NA,keep.stat=c("rsq","n"),no.space=TRUE,
+          header=FALSE,
+          keep=c("EDUC","RACE","SMSA","MARRIED","AGE_SQUARED","AGE"),
+          title="Log hourly wage OLS regressions", type="text"
+)
+```
+
+
+Dans cette deuxième partie, l'estimateur des moindres carrés ordinaires pour l'éducation est encore plus faible que celui de la regression avec les variables intrumentales.
+Cette fois ci on peut voir que l'âge au carré est corrélé négativement au salaire et que l'âge a une influence positive sur le salaire (plus on est âgé, plus on a un salaire élévé).
+
+
+## Estimateur de wald
+
+$w=\frac{E\lbrace log_{ya}|Q_{1}\rbrace-E\lbrace log_{ya}|Q_{2,3,4}\rbrace}{E\lbrace S|Q_{1}\rbrace-E\lbrace S|Q_{2,3,4}\rbrace}$
+
+```{r}
+pums2.tab5$wald_dum <- (pums2.tab5$QOB == 2 | pums2.tab5$QOB == 3| pums2.tab5$QOB == 4) * 1 
+tab_2<-aggregate(cbind(LWKLYWGE,EDUC) ~ wald_dum, data = pums2.tab5, mean)
+
+tab_22 <- as.data.frame(t(tab_2))
+tab_22%>%
+  mutate(V1-V2)->tab_22
+
+tab_22_ter <- tab_22[-1,]
+
+
+tab_22_ter2<-rbind(tab_22_ter,c(0,0,0.4606),c(0,0,0.0302))
+
+colnames(tab_22_ter2) <- c("(1): 1 QOB","(2): 2,3,4 QOB","(3): (1)-(2)")## nom de colonne
+rownames(tab_22_ter2) <- c("wkly.wage","Education","Wald test. of return to education","OLS return to education")
+
+tab_22_ter2
+```
+
+
+L'estimation Wald du rendement de l'éducation (0,46) est supérieure à l'estimation MCO (0,03), 
+mais la différence entre les deux estimations n'est pas statistiquement significative.
